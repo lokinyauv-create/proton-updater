@@ -10,7 +10,7 @@ Commands:
   protonupd.py install SRC TAG — install a specific version
   protonupd.py set APPID SRC [TAG] — bind a game to a source (and version)
 """
-from i18n import set_lang, tr
+from i18n import S, set_lang, tr
 import hashlib, json, os, re, shutil, subprocess, sys, tarfile, tempfile, time, urllib.error, urllib.request
 from pathlib import Path
 
@@ -37,7 +37,18 @@ SOURCES = {
     },
 }
 DEFAULT = {"games": {"438100": {"name": "VRChat", "source": "ge", "pin": None}},
-           "keep": 2, "last_check": 0, "pending": {}, "lang": "auto"}
+           "keep": 2, "last_check": 0, "pending": {}, "lang": "auto", "custom": {}}
+NAMES = CONF.parent / "installed.json"   # archive url -> {dir, tool, src} (needed for custom sources)
+REPO_RE = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
+
+
+def custom_source(cs):
+    return {"title": cs["title"], "repo": cs["repo"], "custom": True, "match": None}
+
+
+def src_title(key):
+    t = SOURCES[key]["title"]
+    return tr(t) if t in S else t
 
 
 def load():
@@ -48,7 +59,44 @@ def load():
     for k, v in DEFAULT.items():
         c.setdefault(k, json.loads(json.dumps(v)))
     set_lang(c["lang"])
+    for k in [k for k in SOURCES if SOURCES[k].get("custom")]:
+        del SOURCES[k]
+    for k, cs in c["custom"].items():
+        SOURCES[k] = custom_source(cs)
     return c
+
+
+def names():
+    try:
+        return json.loads(NAMES.read_text())
+    except Exception:
+        return {}
+
+
+def add_custom(c, repo, title=""):
+    """Register a GitHub repo as a Proton source (after checking that it has usable releases)."""
+    repo = repo.strip().removeprefix("https://github.com/").strip("/")
+    if not REPO_RE.match(repo):
+        raise RuntimeError(tr("custom_bad"))
+    key = "c_" + re.sub(r"\W", "_", repo)
+    SOURCES[key] = custom_source({"title": title or repo, "repo": repo})
+    try:
+        if not releases(key, 10):
+            raise RuntimeError(tr("custom_none"))
+    except Exception:
+        del SOURCES[key]
+        raise
+    c["custom"][key] = {"title": title or repo, "repo": repo}
+    save(c)
+    return key
+
+
+def remove_custom(c, key):
+    c["custom"].pop(key, None)
+    SOURCES.pop(key, None)
+    for a in [a for a, g in c["games"].items() if g["source"] == key]:
+        c["games"].pop(a); c["pending"].pop(a, None)
+    save(c)
 
 
 def save(c):
@@ -104,37 +152,85 @@ def releases(src, n=30):
     for r in http_json(f"https://api.github.com/repos/{s['repo']}/releases?per_page={n}"):
         if r.get("prerelease") or r.get("draft"):
             continue
+        if s.get("custom"):
+            rel = generic_release(r)
+            if rel:
+                out.append(rel)
+            continue
         for a in r["assets"]:
             m = re.match(s["asset"], a["name"])
             if m:
                 sha = next((x["browser_download_url"] for x in r["assets"] if x["name"] == a["name"] + ".sha512sum"
                             or x["name"] == a["name"][:-7] + ".sha512sum"), None)
                 out.append({"tag": r["tag_name"], "name": s["name"](m.group(1)), "url": a["browser_download_url"],
-                            "sha": sha, "page": r["html_url"], "date": r["published_at"][:10], "size": a["size"]})
+                            "sha": sha, "algo": "sha512", "page": r["html_url"], "date": r["published_at"][:10], "size": a["size"]})
                 break
     return out
+
+
+ARCHIVE_EXT = (".tar.gz", ".tgz", ".tar.xz", ".tar.zst", ".tar.bz2")
+
+
+def generic_release(r):
+    """Pick the Linux x86_64 tarball of a release of an arbitrary Proton repo."""
+    best = None
+    for a in r["assets"]:
+        n = a["name"].lower()
+        ext = next((e for e in ARCHIVE_EXT if n.endswith(e)), None)
+        if not ext or re.search(r"aarch64|arm64|armv|i686|win(32|64)|\.sha", n):
+            continue
+        score = 2 if re.search(r"x86[_-]64|amd64|x64", n) else 1
+        if not best or score > best[0]:
+            best = (score, a, ext)
+    if not best:
+        return None
+    a = best[1]
+    base = a["name"][:-len(best[2])]
+    sha = algo = None
+    for al in ("sha512", "sha256"):
+        for cand in (a["name"] + "." + al + "sum", base + "." + al + "sum", a["name"] + "." + al):
+            x = next((x for x in r["assets"] if x["name"] == cand), None)
+            if x:
+                sha, algo = x["browser_download_url"], al
+                break
+        if sha:
+            break
+    return {"tag": r["tag_name"], "name": base, "url": a["browser_download_url"], "sha": sha, "algo": algo,
+            "page": r["html_url"], "date": r["published_at"][:10], "size": a["size"]}
 
 
 def installed(src=None):
     res = []
     for d in sorted(COMPAT.glob("*")):
         for k, s in SOURCES.items():
-            if (src in (None, k)) and re.match(s["match"], d.name):
+            if s["match"] and (src in (None, k)) and re.match(s["match"], d.name):
                 res.append((k, d.name))
     return res
 
 
-def install(rel, log=print):
-    dest = COMPAT / rel["name"]
-    if dest.exists():
-        return dest
+def internal_name(d):
+    """The tool name Steam uses = first key inside compat_tools of compatibilitytool.vdf."""
+    try:
+        m = re.search(r'"compat_tools"\s*\{\s*"([^"]+)"', (d / "compatibilitytool.vdf").read_text(errors="ignore"))
+        return m.group(1) if m else None
+    except OSError:
+        return None
+
+
+def install(rel, log=print, src=None):
+    """Download, verify and unpack a release. Returns the tool name to give Steam."""
+    known = names().get(rel["url"])
+    if known and (COMPAT / known["dir"]).exists():
+        return known["tool"]
+    if not src and (COMPAT / rel["name"]).exists():
+        return rel["name"]
     COMPAT.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=COMPAT.parent) as tmp:
         tmp = Path(tmp)
-        f = tmp / "a.tar.gz"
+        f = tmp / "a.tar"
         log(tr("dl", name=rel["name"], mb=rel["size"] // 1048576))
         req = urllib.request.Request(rel["url"], headers={"User-Agent": "proton-updater"})
-        h = hashlib.sha512()
+        h = hashlib.new(rel.get("algo") or "sha512")
         with urllib.request.urlopen(req, timeout=60) as r, open(f, "wb") as o:
             while chunk := r.read(1 << 20):
                 o.write(chunk); h.update(chunk)
@@ -152,9 +248,21 @@ def install(rel, log=print):
         top = [p for p in ex.iterdir() if p.is_dir()]
         if len(top) != 1:
             raise RuntimeError(tr("bad_archive"))
+        if src:                                   # custom source: keep the author's folder name
+            dest = COMPAT / top[0].name
+            tool = internal_name(top[0])
+            if not tool:
+                raise RuntimeError(tr("custom_notool"))
+            if dest.exists():
+                shutil.rmtree(dest)
+        else:
+            dest, tool = COMPAT / rel["name"], rel["name"]
         shutil.move(str(top[0]), str(dest))
-    log(tr("installed", name=rel["name"]))
-    return dest
+    if src:
+        nm = names(); nm[rel["url"]] = {"dir": dest.name, "tool": tool, "src": src}
+        NAMES.parent.mkdir(parents=True, exist_ok=True); NAMES.write_text(json.dumps(nm, indent=1))
+    log(tr("installed", name=tool))
+    return tool
 
 
 # ---------- Steam config.vdf ----------
@@ -259,9 +367,9 @@ def check(c, log=print):
         rel = wanted_for(src, g, cache[src])
         if not rel:
             continue
-        install(rel, log)
-        if current_tool(appid) != rel["name"]:
-            c["pending"][appid] = rel["name"]
+        tool = install(rel, log, src if SOURCES[src].get("custom") else None)
+        if current_tool(appid) != tool:
+            c["pending"][appid] = tool
     c["last_check"] = time.time()
     save(c)
     cleanup(c, log)
@@ -271,7 +379,16 @@ def check(c, log=print):
 
 def cleanup(c, log=print):
     used = {current_tool(a) for a in c["games"]} | set(c["pending"].values())
-    for src in SOURCES:
+    for src, s in SOURCES.items():
+        if s.get("custom"):
+            mine = sorted(((v["dir"], v["tool"]) for v in names().values() if v["src"] == src),
+                          key=lambda x: (COMPAT / x[0]).stat().st_mtime if (COMPAT / x[0]).exists() else 0, reverse=True)
+            mine = [m for m in dict(mine).items() if (COMPAT / m[0]).exists()]
+            for d, tool in mine[c["keep"]:]:
+                if tool not in used:
+                    shutil.rmtree(COMPAT / d, ignore_errors=True)
+                    log(tr("removed_old", name=d))
+            continue
         have = [n for s, n in installed(src)]
         have.sort(key=lambda n: [int(x) if x.isdigit() else 0 for x in re.split(r"\D+", n)], reverse=True)
         keep = set(have[:c["keep"]]) | used
@@ -308,7 +425,7 @@ def main(a):
         print(tr("installed_list", l=", ".join(n for _, n in installed())))
     elif cmd == "install":
         rel = next(r for r in releases(a[1], 100) if r["tag"] == a[2] or r["name"] == a[2])
-        install(rel)
+        install(rel, src=a[1] if SOURCES[a[1]].get("custom") else None)
     elif cmd == "set":
         appid, src = a[1], a[2]
         c["games"][appid] = {"name": steam_games().get(appid, appid), "source": src, "pin": a[3] if len(a) > 3 else None}

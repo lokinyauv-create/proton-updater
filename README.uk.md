@@ -4,9 +4,19 @@
 
 > ## ⚠️ Створено штучним інтелектом
 > Увесь код і цей опис **згенеровані штучним інтелектом — Claude (Anthropic)** — на прохання власниці репозиторію, **Lokinya**, під час діалогу. Людина ставила завдання, перевіряла результат на власному комп'ютері й вирішувала, що залишити.
-> Програма маленька й відкрита — прочитай код перед використанням (~600 рядків Python). Без гарантій.
+> Програма маленька й відкрита — прочитай код перед використанням (~1000 рядків Python). Без гарантій.
 
 Маленька програма для Linux, яка **сама стежить за новими версіями GE-Proton (і proton-rtsp), ставить їх і перемикає на нову версію вибрані тобою ігри в Steam**. Зроблена, бо VRChat на Linux вимагає свіжого Proton, а міняти його вручну після кожного релізу набридає.
+
+## Встановлення в один крок
+
+Встав це в термінал (воно саме завантажить і встановить усе, права адміністратора не потрібні):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lokinyauv-create/proton-updater/main/get.sh | bash
+```
+
+Потім відкрий **«Оновлювач Proton»** у меню програм. Також можна завантажити [`get.sh`](https://github.com/lokinyauv-create/proton-updater/releases/latest) зі сторінки Releases і запустити. Видалити: `~/.local/share/proton-updater/uninstall.sh`.
 
 ## Що вона вміє
 
@@ -27,7 +37,11 @@
 | `ge` | GE-Proton | [GloriousEggroll/proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom) |
 | `rtsp` | Proton-GE RTSP (виправлення відео для VRChat) | [SpookySkeletons/proton-ge-rtsp](https://github.com/SpookySkeletons/proton-ge-rtsp) |
 
-Це проєкти інших авторів; ця програма лише завантажує їхні релізи. Додати своє джерело — рядок у словнику `SOURCES` у `protonupd.py`.
+Це проєкти інших авторів; ця програма лише завантажує їхні релізи.
+
+### Свої джерела
+
+Потрібен інший Proton для іншої гри? Відкрий **Налаштування → Свої джерела**, впиши репозиторій GitHub у форматі `власник/репозиторій` (наприклад, репозиторій Proton-CachyOS чи Proton-EM) і додай. Воно з'явиться у списку, коли додаєш гру. Програма бере з кожного релізу архів для Linux x86_64 (`.tar.gz`, `.tar.xz`, `.tar.zst` — останній потребує Python 3.14+), перевіряє файл sha256/sha512, якщо автор його опублікував, і читає назву інструмента з `compatibilitytool.vdf` в архіві. Архіви без цього файлу відхиляються.
 
 ## Як це працює
 
@@ -38,9 +52,9 @@
 
 Вікно — на PySide6; ядро (`protonupd.py`) працює і без нього: `proton-updater status | check | run | restart | install ДЖЕРЕЛО ВЕРСІЯ | set APPID ДЖЕРЕЛО [ВЕРСІЯ]`.
 
-## Встановлення
+## Встановлення з коду
 
-Потрібні: Linux, нативний Steam (`~/.local/share/Steam`), Python 3.11+, PySide6 (для вікна), `notify-send` (сповіщення), користувацький systemd.
+Потрібні: Linux, нативний Steam (`~/.local/share/Steam`), Python 3.11+, PySide6 (ставиться сам), `notify-send` (сповіщення), користувацький systemd.
 
 ```bash
 git clone https://github.com/lokinyauv-create/proton-updater
@@ -48,7 +62,7 @@ cd proton-updater
 ./install.sh
 ```
 
-Скрипт створює команди `proton-updater` і `proton-updater-gui`, ярлик у меню та таймер `proton-updater.timer`. За замовчуванням стежить за VRChat (`438100`). Видалення: `systemctl --user disable --now proton-updater.timer` і прибрати файли з `~/.local/bin`, `~/.config/systemd/user`, `~/.local/share/applications`.
+Копіює програму в `~/.local/share/proton-updater`, створює команди `proton-updater` і `proton-updater-gui`, ярлик у меню та таймер `proton-updater.timer`. За замовчуванням стежить за VRChat (`438100`). Видалення: `./uninstall.sh` (версії Proton і налаштування Steam лишаються).
 
 ## Обмеження (чесно)
 

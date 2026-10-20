@@ -4,7 +4,7 @@
 import subprocess, sys, threading
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
-                               QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout,
+                               QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout,
                                QWidget)
 import protonupd as P
 from i18n import set_lang, tr
@@ -40,7 +40,7 @@ QPushButton#addcard { background: transparent; border: 2px dashed #45475a; borde
 QPushButton#addcard:hover { border-color: #cba6f7; color: #cba6f7; }
 QScrollArea { border: none; background: transparent; }
 QScrollArea > QWidget > QWidget { background: transparent; }
-QListWidget, QPlainTextEdit, QComboBox { background: #181825; border: 1px solid #45475a; border-radius: 8px; padding: 6px; }
+QLineEdit, QListWidget, QPlainTextEdit, QComboBox { background: #181825; border: 1px solid #45475a; border-radius: 8px; padding: 6px; }
 QListWidget::item { padding: 6px; border-radius: 6px; }
 QListWidget::item:selected { background: #cba6f7; color: #1e1e2e; }
 QComboBox QAbstractItemView { background: #181825; selection-background-color: #cba6f7; selection-color: #1e1e2e; }
@@ -189,7 +189,7 @@ class Main(QWidget):
         top.addWidget(lab(g["name"], "gameName"))
         chip = lab(status_text, "chip"); chip.setProperty("kind", kind); top.addWidget(chip); top.addStretch()
         left.addLayout(top)
-        left.addWidget(lab(tr("src_" + g["source"]), "muted"))
+        left.addWidget(lab(P.src_title(g["source"]), "muted"))
         cur = P.current_tool(appid) or "—"
         lat = g["pin"] if g.get("pin") else self.latest.get(g["source"], "…")
         left.addWidget(lab(f"{tr('lbl_now')}: {cur}     {tr('lbl_latest') if not g.get('pin') else tr('st_pinned')}: {lat}", "muted"))
@@ -225,7 +225,7 @@ class Main(QWidget):
         l.addWidget(lst, 1)
         cb = QComboBox()
         for k in P.SOURCES:
-            cb.addItem(tr("src_" + k), k)
+            cb.addItem(P.src_title(k), k)
         l.addWidget(cb)
         self._ok_cancel(d, l)
         if d.exec() and lst.currentRow() >= 0:
@@ -254,7 +254,7 @@ class Main(QWidget):
         self._ok_cancel(d, l)
         if d.exec() and lst.currentRow() >= 0:
             i = lst.currentRow()
-            self.c["games"][a]["pin"] = None if i == 0 else rels[i - 1]["name"]
+            self.c["games"][a]["pin"] = None if i == 0 else rels[i - 1]["tag"]
             self.save()
             self.check_now()
 
@@ -319,14 +319,42 @@ class Main(QWidget):
         d.exec()
 
     def settings(self):
-        d, l = self._dialog(tr("settings_title"), 380, 180)
+        d, l = self._dialog(tr("settings_title"), 480, 560)
         l.addWidget(lab(tr("lang_label"), "muted"))
         cb = QComboBox()
         cb.addItem(tr("lang_auto"), "auto"); cb.addItem("English", "en"); cb.addItem("Українська", "uk")
         cb.setCurrentIndex(max(0, cb.findData(self.c.get("lang", "auto"))))
-        l.addWidget(cb); l.addStretch()
+        l.addWidget(cb)
+        l.addSpacing(8)
+        l.addWidget(lab(tr("custom_title"), "gameName"))
+        l.addWidget(lab(tr("custom_hint"), "muted", True))
+        lst = QListWidget()
+        def fill():
+            lst.clear()
+            for k, cs in self.c["custom"].items():
+                lst.addItem(f"{cs['title']}   ·   {cs['repo']}")
+        fill()
+        l.addWidget(lst, 1)
+        repo = QLineEdit(); repo.setPlaceholderText(tr("custom_repo"))
+        name = QLineEdit(); name.setPlaceholderText(tr("custom_name"))
+        l.addWidget(repo); l.addWidget(name)
+        msg = lab("", "muted", True); l.addWidget(msg)
+        row = QHBoxLayout()
+        def add():
+            try:
+                P.add_custom(self.c, repo.text(), name.text())
+                msg.setText(tr("custom_added", t=repo.text())); repo.clear(); name.clear(); fill()
+            except Exception as e:
+                msg.setText(str(e))
+        def rem():
+            if lst.currentRow() >= 0:
+                P.remove_custom(self.c, list(self.c["custom"])[lst.currentRow()]); fill()
+        row.addWidget(btn(tr("custom_add"), "primary", add)); row.addWidget(btn(tr("custom_remove"), None, rem))
+        l.addLayout(row)
         self._ok_cancel(d, l)
-        if d.exec() and cb.currentData() != self.c.get("lang"):
+        ok = d.exec()
+        self.refresh()
+        if ok and cb.currentData() != self.c.get("lang"):
             self.c["lang"] = cb.currentData()
             P.save(self.c)
             set_lang(self.c["lang"])
