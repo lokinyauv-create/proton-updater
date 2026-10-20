@@ -11,7 +11,7 @@ Commands:
   protonupd.py set APPID SRC [TAG] — bind a game to a source (and version)
 """
 from i18n import set_lang, tr
-import hashlib, json, os, re, shutil, subprocess, sys, tarfile, tempfile, time, urllib.request
+import hashlib, json, os, re, shutil, subprocess, sys, tarfile, tempfile, time, urllib.error, urllib.request
 from pathlib import Path
 
 STEAM = Path.home() / ".local/share/Steam"
@@ -56,10 +56,46 @@ def save(c):
     CONF.write_text(json.dumps(c, ensure_ascii=False, indent=1))
 
 
+CACHE = Path.home() / ".cache/proton-updater"
+CACHE_TTL = 600   # seconds: reuse a fresh answer without asking GitHub at all
+
+
 def http_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "proton-updater"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+    """GitHub API call with a disk cache + ETag (a 304 answer does not count against the rate limit)."""
+    CACHE.mkdir(parents=True, exist_ok=True)
+    f = CACHE / (hashlib.sha1(url.encode()).hexdigest() + ".json")
+    cached = None
+    try:
+        cached = json.loads(f.read_text())
+        if time.time() - cached["t"] < CACHE_TTL:
+            return cached["body"]
+    except Exception:
+        cached = None
+    headers = {"User-Agent": "proton-updater", "Accept": "application/vnd.github+json"}
+    if os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
+    if cached and cached.get("etag"):
+        headers["If-None-Match"] = cached["etag"]
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as r:
+            body = json.load(r)
+            f.write_text(json.dumps({"t": time.time(), "etag": r.headers.get("ETag"), "body": body}))
+            return body
+    except urllib.error.HTTPError as e:
+        if e.code == 304 and cached:
+            cached["t"] = time.time(); f.write_text(json.dumps(cached))
+            return cached["body"]
+        if e.code in (403, 429):
+            if cached:
+                return cached["body"]          # better stale than nothing
+            reset = e.headers.get("x-ratelimit-reset")
+            when = time.strftime("%H:%M", time.localtime(int(reset))) if reset else "?"
+            raise RuntimeError(tr("rate_limit", t=when))
+        raise
+    except urllib.error.URLError:
+        if cached:
+            return cached["body"]              # offline: use the last known answer
+        raise
 
 
 def releases(src, n=30):

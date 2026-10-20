@@ -34,6 +34,8 @@ S = {
                     "{name} ({appid}): джерело {src}, у Steam: {cur}, закріплено: {pin}, відкладено: {pend}"),
     "no": ("no (latest)", "ні (остання)"),
     "installed_list": ("Installed: {l}", "Встановлено: {l}"),
+    "rate_limit": ("GitHub request limit reached (no sign-in). Try again after {t}, or set GITHUB_TOKEN.",
+                   "Ліміт запитів GitHub вичерпано (без входу). Спробуй після {t} або задай GITHUB_TOKEN."),
     # --- redesigned GUI ---
     "hdr_sub": ("Keeps Proton up to date for your Steam games", "Тримає Proton свіжим для твоїх ігор у Steam"),
     "banner_busy": ("Working…", "Працюю…"),
