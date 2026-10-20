@@ -19,6 +19,17 @@ Steam runs Windows games on Linux through a layer called **Proton**. Some games 
 
 That's all. You can close the window — a background timer keeps watching.
 
+## The bell 🔔
+
+A bell means **a newer Proton has been released than the one this game uses**. It appears next to the game's status and on the **Version…** button; hover it to see which version. You also get a desktop notification (once per release) — for pinned games too, so you know the moment a newer version is out while the game stays on its pinned one.
+
+At the top of the window a purple strip **🔔 Proton Updater X.Y.Z is available** means a new version *of this program* exists. Press **Update the program**: it downloads the release from GitHub, installs it and restarts itself. **What's new** opens the release notes. The background timer also sends a desktop notification (once per version).
+
+```bash
+proton-updater version      # shows your version and whether a newer one exists
+proton-updater selfupdate   # update the program from the terminal
+```
+
 ## What the card colours mean
 
 | Chip | Meaning |

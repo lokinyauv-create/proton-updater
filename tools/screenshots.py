@@ -33,8 +33,12 @@ P.load = lambda: {"games": {
     "keep": 2, "last_check": 0, "pending": {}, "lang": LANG,
     "custom": {"c_a": {"title": "Proton-CachyOS", "repo": "CachyOS/proton-cachyos"},
                "c_b": {"title": "Proton-EM", "repo": "Etaash-mathamsetty/Proton"}}}
+APP = {"version": "1.3.0", "tag": "v1.3.0", "page": "https://github.com/lokinyauv-create/proton-updater/releases", "notes": ""}
+G.Main._fetch = staticmethod(lambda log: {"rels": {"ge": REL[0]}, "app": APP})   # no real network in screenshots
 w = G.Main()
 w.latest = {"ge": "GE-Proton11-11-x86_64", "rtsp": "proton-rtsp-11.0-20260609-4"}
+w.latest_rel = {"ge": REL[0]}
+w.app_info = {"version": "1.3.0", "tag": "v1.3.0", "page": "https://github.com/lokinyauv-create/proton-updater/releases", "notes": ""}
 w.refresh(); w.show()
 from PySide6.QtCore import QCoreApplication, QEvent
 for _ in range(3):                                     # let deleted cards disappear before grabbing

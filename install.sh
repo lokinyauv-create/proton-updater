@@ -14,7 +14,7 @@ if ! python3 -c "import PySide6" 2>/dev/null; then
 fi
 
 mkdir -p "$APP" ~/.local/bin ~/.local/share/applications ~/.config/systemd/user
-cp "$SRC"/protonupd.py "$SRC"/protonupd_gui.py "$SRC"/i18n.py "$SRC"/LICENSE "$APP"/
+cp "$SRC"/protonupd.py "$SRC"/protonupd_gui.py "$SRC"/i18n.py "$SRC"/version.py "$SRC"/LICENSE "$APP"/
 cp "$SRC"/uninstall.sh "$APP"/ 2>/dev/null || true
 
 cat > ~/.local/bin/proton-updater <<EOW

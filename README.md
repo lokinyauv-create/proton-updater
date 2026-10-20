@@ -68,6 +68,13 @@ cd proton-updater
 
 It copies the app to `~/.local/share/proton-updater`, creates the commands `proton-updater` and `proton-updater-gui`, a menu entry and `proton-updater.timer`. By default it watches VRChat (`438100`). Uninstall with `./uninstall.sh` (Proton versions and Steam settings stay).
 
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+23 tests run the whole flow (new release → download → checksum → switch) against a fake GitHub and a temporary fake Steam folder; nothing touches your real Steam.
+
 ## Limitations (honestly)
 
 - Tested on Fedora 44 + KDE Plasma (Wayland) + native Steam. Flatpak Steam is not supported.

@@ -68,6 +68,13 @@ cd proton-updater
 
 Копіює програму в `~/.local/share/proton-updater`, створює команди `proton-updater` і `proton-updater-gui`, ярлик у меню та таймер `proton-updater.timer`. За замовчуванням стежить за VRChat (`438100`). Видалення: `./uninstall.sh` (версії Proton і налаштування Steam лишаються).
 
+## Тести
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+23 тести проганяють увесь потік (новий реліз → завантаження → контрольна сума → перемикання) на підставному GitHub і тимчасовій підставній теці Steam; справжнього Steam це не чіпає.
+
 ## Обмеження (чесно)
 
 - Перевірено на Fedora 44 + KDE Plasma (Wayland) + нативний Steam. Flatpak-Steam не підтримується.

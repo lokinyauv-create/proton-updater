@@ -14,6 +14,7 @@
   | `~/.config/proton-updater/` | its own settings |
   | `~/.cache/proton-updater/` | cached GitHub answers |
   | `~/.local/share/proton-updater/`, `~/.local/bin/`, `~/.config/systemd/user/`, `~/.local/share/applications/` | the program itself, commands, timer, menu entry |
+- **Self-update:** once per 30 minutes (cached) it asks GitHub for the newest release of this very repository. Only when you press *Update the program* (or run `proton-updater selfupdate`) does it download that release's source and run its `install.sh`. Nothing is updated silently.
 - **No root.** Nothing runs with administrator rights.
 - **Trust:** a Proton build is executable code that will run your games. Only add custom sources you trust. The *Where from?* button shows exactly where a version came from.
 - **AI-generated code:** read it before use (it is short). Report problems via [Issues](https://github.com/lokinyauv-create/proton-updater/issues).
@@ -23,6 +24,7 @@
 - **Мережа:** лише `api.github.com` (списки релізів) і `github.com` (завантаження файлів релізів з репозиторіїв, які ти налаштувала). Про тебе нічого не надсилається, без телеметрії та акаунтів. Необов'язкова змінна `GITHUB_TOKEN`, якщо ти її задала, надсилається лише на `api.github.com`.
 - **Перевірка:** якщо автор релізу публікує файл `.sha512sum` / `.sha256sum`, архів перевіряється до розпакування. При розбіжності нічого не встановлюється. Якщо автор не дає контрольної суми, програма пише про це в журналі.
 - **Які файли змінює:** див. таблицю вище.
+- **Самооновлення:** раз на 30 хвилин (з кешем) питає GitHub про найновіший реліз цього репозиторію. Лише коли ти натиснеш *«Оновити програму»* (або виконаєш `proton-updater selfupdate`), вона завантажує код цього релізу й запускає його `install.sh`. Нічого не оновлюється мовчки.
 - **Без root.** Нічого не працює з правами адміністратора.
 - **Довіра:** збірка Proton — це виконуваний код, який запускатиме твої ігри. Додавай лише ті свої джерела, яким довіряєш. Кнопка *«Звідки?»* показує, звідки саме взято версію.
 - **Код згенеровано ШІ:** прочитай його перед використанням (він короткий). Про проблеми пиши в [Issues](https://github.com/lokinyauv-create/proton-updater/issues).

@@ -7,10 +7,13 @@ Commands:
   protonupd.py check          — check for new versions now (and install)
   protonupd.py status         — show games and versions
   protonupd.py restart        — restart Steam and apply pending switches
+  protonupd.py version        — show the version and whether a newer Proton Updater exists
+  protonupd.py selfupdate     — update Proton Updater itself
   protonupd.py install SRC TAG — install a specific version
   protonupd.py set APPID SRC [TAG] — bind a game to a source (and version)
 """
 from i18n import S, set_lang, tr
+from version import APP_REPO, VERSION
 import hashlib, json, os, re, shutil, subprocess, sys, tarfile, tempfile, time, urllib.error, urllib.request
 from pathlib import Path
 
@@ -37,7 +40,7 @@ SOURCES = {
     },
 }
 DEFAULT = {"games": {"438100": {"name": "VRChat", "source": "ge", "pin": None}},
-           "keep": 2, "last_check": 0, "pending": {}, "lang": "auto", "custom": {}}
+           "keep": 2, "last_check": 0, "pending": {}, "lang": "auto", "custom": {}, "bell": {}, "notified_app": ""}
 NAMES = CONF.parent / "installed.json"   # archive url -> {dir, tool, src} (needed for custom sources)
 REPO_RE = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
 
@@ -320,13 +323,62 @@ def wanted_for(src, game, rels):
     return rels[0] if rels else None
 
 
+def needs_update(appid, g, rel, cur=None):
+    """True when a newer Proton than the one the game uses has been released (bell icon).
+    Pinned games compare against their pin; the others against the newest release."""
+    if not rel:
+        return False
+    if g.get("pin"):
+        return rel["tag"] != g["pin"] and rel["name"] != g["pin"]
+    tool = names().get(rel["url"], {}).get("tool") or rel["name"]
+    return (cur or current_tool(appid)) != tool
+
+
+def newer_version(a, b):
+    """Is version string a (like 1.3.0 or v1.3.0) newer than b?"""
+    num = lambda s: [int(x) for x in re.findall(r"\d+", s)]
+    return num(a) > num(b)
+
+
+def app_update():
+    """Newest Proton Updater release that is newer than the running one, else None. Returns (version, page, notes)."""
+    r = http_json(f"https://api.github.com/repos/{APP_REPO}/releases/latest")
+    tag = r.get("tag_name", "")
+    if tag and newer_version(tag, VERSION):
+        return {"version": tag.lstrip("v"), "tag": tag, "page": r.get("html_url", ""), "notes": r.get("body") or ""}
+    return None
+
+
+def update_self(info, log=print):
+    """Download the new release of this program from GitHub and run its installer."""
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "a.tar.gz"
+        url = f"https://codeload.github.com/{APP_REPO}/tar.gz/refs/tags/{info['tag']}"
+        log(tr("dl", name=f"Proton Updater {info['version']}", mb=1))
+        req = urllib.request.Request(url, headers={"User-Agent": "proton-updater"})
+        with urllib.request.urlopen(req, timeout=60) as r, open(f, "wb") as o:
+            shutil.copyfileobj(r, o)
+        with tarfile.open(f) as t:
+            t.extractall(tmp, filter="data")
+        d = next(x for x in Path(tmp).iterdir() if x.is_dir())
+        res = subprocess.run(["bash", str(d / "install.sh")], capture_output=True, text=True)
+        if res.returncode:
+            raise RuntimeError(res.stderr.strip() or res.stdout.strip())
+    log(tr("self_updated", v=info["version"]))
+
+
+def tool_present(tool):
+    """Is a tool with this Steam name installed? (the folder name may differ for custom sources)"""
+    return (COMPAT / tool).exists() or any(v["tool"] == tool and (COMPAT / v["dir"]).exists() for v in names().values())
+
+
 def apply_pending(c, log=print):
     if not c["pending"]:
         return
     if steam_running():
         return
     for appid, tool in list(c["pending"].items()):
-        if (COMPAT / tool).exists():
+        if tool_present(tool):
             set_tool(appid, tool)
             gname = c["games"].get(appid, {}).get("name", appid)
             log(tr("switched", game=gname, tool=tool))
@@ -364,6 +416,10 @@ def check(c, log=print):
         src = g["source"]
         if src not in cache:
             cache[src] = releases(src)
+        newest = cache[src][0] if cache[src] else None
+        if newest and g.get("pin") and needs_update(appid, g, newest) and c["bell"].get(appid) != newest["tag"]:
+            notify(tr("notify_pin_new", game=g["name"], ver=newest["name"]))     # bell: pinned game has a newer Proton
+            c["bell"][appid] = newest["tag"]
         rel = wanted_for(src, g, cache[src])
         if not rel:
             continue
@@ -407,6 +463,13 @@ def run():
         except Exception as e:
             print(tr("check_failed", e=e), file=sys.stderr)
         apply_pending(c)
+    try:
+        u = app_update()
+        if u and c.get("notified_app") != u["version"]:
+            notify(tr("notify_app_new", v=u["version"]))
+            c["notified_app"] = u["version"]; save(c)
+    except Exception:
+        pass
 
 
 def main(a):
@@ -418,6 +481,13 @@ def main(a):
         check(c); apply_pending(c)
     elif cmd == "restart":
         restart_steam(c)
+    elif cmd == "version":
+        print(f"Proton Updater {VERSION}")
+        u = app_update()
+        print(tr("app_new_title", v=u["version"]) if u else tr("app_latest"))
+    elif cmd == "selfupdate":
+        u = app_update()
+        update_self(u) if u else print(tr("app_latest"))
     elif cmd == "status":
         for appid, g in c["games"].items():
             print(tr("status_line", name=g["name"], appid=appid, src=g["source"], cur=current_tool(appid),
