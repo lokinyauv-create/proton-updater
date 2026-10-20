@@ -11,6 +11,12 @@ import protonupd as P
 import protonupd_gui as G
 
 app = QApplication.instance() or QApplication([])
+
+
+def wait(ms):
+    """Wait with a real event loop (QTest.qWait does not deliver signals emitted from worker threads)."""
+    from PySide6.QtCore import QEventLoop, QTimer
+    loop = QEventLoop(); QTimer.singleShot(ms, loop.quit); loop.exec()
 REL = {"tag": "GE-Proton11-12", "name": "GE-Proton11-12-x86_64", "url": "u", "date": "2026-10-20", "size": 5 << 20,
        "sha": None, "page": "p"}
 
@@ -64,7 +70,7 @@ class Gui(unittest.TestCase):
         self.assertTrue(sw.isChecked())
         QTest.mouseClick(sw, Qt.LeftButton)                              # a real click
         self.assertFalse(self.w.c["games"]["2"]["auto"]); self.assertTrue(saved and saved[-1]["games"]["2"]["auto"] is False)
-        QTest.qWait(400)                                                 # the knob slides first, then the card is rebuilt
+        wait(400)                                                 # the knob slides first, then the card is rebuilt
         self.assertFalse(self.switches()[1].isChecked())                 # card rebuilt, switch is off
         self.assertTrue(any("Update now" in t for t in self.texts()))    # off + newer exists -> manual button
 
@@ -72,7 +78,7 @@ class Gui(unittest.TestCase):
         P.save = lambda c: None; self.w.check_now = lambda: None
         self.w.refresh(); sw = self.switches()[2]                        # game C is pinned -> switch shows OFF
         self.assertFalse(sw.isChecked())
-        QTest.mouseClick(sw, Qt.LeftButton); QTest.qWait(400)
+        QTest.mouseClick(sw, Qt.LeftButton); wait(400)
         self.assertIsNone(self.w.c["games"]["3"]["pin"]); self.assertTrue(self.w.c["games"]["3"]["auto"])
 
     def test_off_chip_when_auto_off_and_up_to_date(self):
@@ -97,15 +103,15 @@ class Gui(unittest.TestCase):
         P.save = lambda c: None; self.w.check_now = lambda: None
         self.w.refresh(); calls = []
         orig = self.w.make_card; self.w.make_card = lambda *a, **k: (calls.append(a[0]), orig(*a, **k))[1]
-        QTest.mouseClick(self.switches()[1], Qt.LeftButton); QTest.qWait(500)
+        QTest.mouseClick(self.switches()[1], Qt.LeftButton); wait(500)
         self.assertEqual(len(calls), 3)                                   # 3 games, one rebuild
 
     def test_switch_slides_smoothly(self):
         s = G.Switch(False); s.show()
-        s.setChecked(True); QTest.qWait(60)
+        s.setChecked(True); wait(60)
         self.assertTrue(0.0 < s.slide < 1.0)                                # in the middle of the slide, not a jump
-        QTest.qWait(300); self.assertEqual(s.slide, 1.0)
-        s.setChecked(False); QTest.qWait(300); self.assertEqual(s.slide, 0.0)
+        wait(300); self.assertEqual(s.slide, 1.0)
+        s.setChecked(False); wait(300); self.assertEqual(s.slide, 0.0)
 
     def test_switch_lights_up_on_hover(self):
         s = G.Switch(False); s.show()
@@ -127,6 +133,42 @@ class Gui(unittest.TestCase):
         def fake(d): found.extend(x.url for x in d.findChildren(G.Link)); return 0
         QDialog.exec = fake; self.w.credits()
         self.assertEqual(len(found), 3); self.assertTrue(all(u.startswith("https://github.com/lokinyauv-create/") for u in found))
+
+    def test_banner_does_not_claim_up_to_date_before_the_first_check(self):
+        import time as _t
+        G.Main._fetch = staticmethod(lambda log: (_t.sleep(0.3), {"rels": {"ge": REL}, "app": None})[1])
+        w = G.Main()
+        self.assertEqual(w.b_title.text(), "Checking for updates…")      # not "Everything is up to date"
+        wait(700)
+        self.assertNotEqual(w.b_title.text(), "Checking for updates…")
+
+    def test_banner_says_so_when_the_check_fails(self):
+        G.Main._fetch = staticmethod(lambda log: {"rels": {}, "app": None})
+        w = G.Main(); wait(300)
+        self.assertEqual(w.b_title.text(), "Could not check for updates")
+
+    def test_refresh_does_not_repolish_when_unchanged(self):
+        self.w.refresh(); n = []
+        orig = G.repolish; G.repolish = lambda x: (n.append(1), orig(x))[1]
+        try:
+            for _ in range(5):
+                self.w.refresh()
+        finally:
+            G.repolish = orig
+        self.assertEqual(n, [])                                           # no style flash
+
+    def test_check_writes_a_readable_log_and_clear_works(self):
+        P.save = lambda c: None
+        P.check = lambda c, log=print, background=False: (log("✓ A: x — up to date"), log("⬇ B: new"))
+        P.apply_pending = lambda c, log=print: None
+        P.check_app = lambda log=print: log("✓ Proton Updater — the latest version")
+        self.w.check_now(); wait(600)
+        text = self.w.log.toPlainText()
+        self.assertIn("✓ A: x — up to date", text); self.assertIn("the latest version", text)
+        self.assertIn("Finished: 3 game(s) checked", text)
+        import re; self.assertTrue(re.search(r"^\[\d\d:\d\d:\d\d\] ", text, re.M))   # timestamps
+        self.w.logbar.findChildren(QPushButton)[1].click()                # "Clear"
+        self.assertEqual(self.w.log.toPlainText(), "")
 
     def test_ukrainian_window(self):
         import i18n; i18n.set_lang("uk"); w = G.Main()

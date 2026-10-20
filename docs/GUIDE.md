@@ -85,6 +85,11 @@ Click **Where from?** — you'll see the author, the repository, the release pag
 ### Apply an update right now
 Press **Restart Steam & apply** (it appears when an update is waiting). Steam closes and starts again. If a game is running you'll be asked to quit it first.
 
+### Read what happened (Details)
+Click **Details** (bottom left). Every check writes one line per game — which version it uses, whether it is up to date, and whether a new one is ready — plus whether the program itself is the latest. Lines carry a time stamp. **Copy** puts the log on the clipboard (handy for a bug report), **Clear** empties it.
+
+![Details](img/details-en.png)
+
 ### Use it without the window
 ```bash
 proton-updater status     # what is installed / pending

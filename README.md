@@ -74,7 +74,7 @@ It copies the app to `~/.local/share/proton-updater`, creates the commands `prot
 ```bash
 python3 -m unittest discover -s tests -v
 ```
-39 tests run the whole flow (new release → download → checksum → switch) against a fake GitHub and a temporary fake Steam folder; nothing touches your real Steam.
+46 tests run the whole flow (new release → download → checksum → switch) against a fake GitHub and a temporary fake Steam folder; nothing touches your real Steam.
 
 ## Limitations (honestly)
 

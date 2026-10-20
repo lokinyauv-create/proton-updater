@@ -187,6 +187,33 @@ class AutoSwitch(Base):
         P.main(["auto", "off", "438100"]); self.assertFalse(P.load()["games"]["438100"]["auto"])
 
 
+class LogLines(Base):
+    def test_check_explains_what_it_found(self):
+        import i18n; i18n.set_lang("en")
+        self.publish_ge(12)
+        c = self.cfg(**{"438100": {"name": "VRChat", "source": "ge", "pin": None},
+                        "2": {"name": "Pinned", "source": "ge", "pin": "GE-Proton11-12"},
+                        "3": {"name": "Off", "source": "ge", "pin": None, "auto": False}})
+        i18n.set_lang("en"); lines = []; P.check(c, lines.append)          # cfg() resets the language to the system one
+        text = "\n".join(lines)
+        self.assertIn("VRChat: new version GE-Proton11-12-x86_64 is ready", text)
+        self.assertIn("Off: newer version", text)                 # auto-update off, newer exists
+        self.assertIn("auto-update is off", text)
+
+    def test_check_logs_up_to_date_games_by_name(self):
+        import i18n; i18n.set_lang("en")
+        self.publish_ge(11)
+        c = self.cfg(); i18n.set_lang("en"); lines = []; P.check(c, lines.append)
+        self.assertTrue(any("VRChat: GE-Proton11-11-x86_64 — up to date" in l for l in lines), lines)
+
+    def test_check_app_reports_both_cases(self):
+        import i18n; i18n.set_lang("en")
+        self.releases_data = {"tag_name": "v99.0.0", "html_url": "p"}; out = []
+        P.check_app(out.append); self.assertIn("99.0.0", out[0])
+        self.releases_data = {"tag_name": "v" + P.VERSION, "html_url": "p"}; out = []
+        P.check_app(out.append); self.assertIn("the latest version", out[0])
+
+
 class Custom(Base):
     def test_custom_source_end_to_end(self):
         fn = "proton-em-10.0-34.tar.xz"

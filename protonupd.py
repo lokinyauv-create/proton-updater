@@ -432,24 +432,44 @@ def check(c, log=print, background=False):
         if background and not c.get("auto_global", True):
             wants = False
         if not wants or (not g.get("pin") and not g.get("auto", True)):
-            if newest and needs_update(appid, g, newest) and c["bell"].get(appid) != newest["tag"]:
-                notify(tr("notify_pin_new", game=g["name"], ver=newest["name"]))      # bell: stays on current version
-                c["bell"][appid] = newest["tag"]
+            if newest and needs_update(appid, g, newest):
+                log(tr("log_off_new", game=g["name"], ver=newest["name"]))
+                if c["bell"].get(appid) != newest["tag"]:
+                    notify(tr("notify_pin_new", game=g["name"], ver=newest["name"]))  # bell: stays on current version
+                    c["bell"][appid] = newest["tag"]
+            else:
+                log(tr("log_off_ok", game=g["name"], cur=current_tool(appid) or "—"))
             continue
         if newest and g.get("pin") and needs_update(appid, g, newest) and c["bell"].get(appid) != newest["tag"]:
             notify(tr("notify_pin_new", game=g["name"], ver=newest["name"]))
             c["bell"][appid] = newest["tag"]
         rel = wanted_for(src, g, cache[src])
         if not rel:
+            log(tr("log_norel", game=g["name"]))
             continue
         tool = install(rel, log, src if SOURCES[src].get("custom") else None)
         if current_tool(appid) != tool:
             c["pending"][appid] = tool
+            log(tr("log_new", game=g["name"], ver=tool))
+        elif g.get("pin"):
+            log(tr("log_pin_ok", game=g["name"], ver=tool))
+        else:
+            log(tr("log_ok", game=g["name"], cur=tool))
     c["last_check"] = time.time()
     save(c)
     cleanup(c, log)
     if c["pending"] and steam_running():
         notify(tr("notify_ready"))
+
+
+def check_app(log=print):
+    """Log whether a newer Proton Updater exists (never raises)."""
+    try:
+        u = app_update()
+        log(tr("log_app_new", v=u["version"], cur=VERSION) if u else tr("log_app_ok", v=VERSION))
+        return u
+    except Exception as e:
+        log(tr("log_app_fail", e=e))
 
 
 def update_game(c, appid, log=print):
@@ -513,7 +533,7 @@ def main(a):
     if cmd == "run":
         run()
     elif cmd == "check":
-        check(c); apply_pending(c)
+        check(c); apply_pending(c); check_app()
     elif cmd == "restart":
         restart_steam(c)
     elif cmd == "auto":

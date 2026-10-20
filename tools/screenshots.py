@@ -49,6 +49,11 @@ def fake_exec(self):
     shots[self.windowTitle()] = self.grab()
     return 0
 QDialog.exec = fake_exec
+w.toggle_log()
+for line in (("✓ VRChat: GE-Proton11-11-x86_64 — up to date", "⬇ Helldivers 2: new version GE-Proton11-11-x86_64 is ready — it will be switched on when Steam is closed", "📌 Blade & Sorcery: pinned to GE-Proton11-9", "✓ Proton Updater 1.4.1 — the latest version") if LANG == "en" else
+             ("✓ VRChat: GE-Proton11-11-x86_64 — актуально", "⬇ Helldivers 2: нова версія GE-Proton11-11-x86_64 готова — гра перемкнеться, коли Steam буде закрито", "📌 Blade & Sorcery: закріплено GE-Proton11-9", "✓ Оновлювач Proton 1.4.1 — остання версія")):
+    w.add_log(line)
+w.grab().save(f"{OUT}/details-{LANG}.png"); w.toggle_log()
 w.add_game(); w.pick_version("438100"); w.about("438100"); w.settings()
 names = ["add", "version", "where", "settings"]
 for n, (t, pm) in zip(names, shots.items()):
