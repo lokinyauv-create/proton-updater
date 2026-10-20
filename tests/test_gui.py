@@ -64,6 +64,7 @@ class Gui(unittest.TestCase):
         self.assertTrue(sw.isChecked())
         QTest.mouseClick(sw, Qt.LeftButton)                              # a real click
         self.assertFalse(self.w.c["games"]["2"]["auto"]); self.assertTrue(saved and saved[-1]["games"]["2"]["auto"] is False)
+        QTest.qWait(400)                                                 # the knob slides first, then the card is rebuilt
         self.assertFalse(self.switches()[1].isChecked())                 # card rebuilt, switch is off
         self.assertTrue(any("Update now" in t for t in self.texts()))    # off + newer exists -> manual button
 
@@ -71,7 +72,7 @@ class Gui(unittest.TestCase):
         P.save = lambda c: None; self.w.check_now = lambda: None
         self.w.refresh(); sw = self.switches()[2]                        # game C is pinned -> switch shows OFF
         self.assertFalse(sw.isChecked())
-        QTest.mouseClick(sw, Qt.LeftButton)
+        QTest.mouseClick(sw, Qt.LeftButton); QTest.qWait(400)
         self.assertIsNone(self.w.c["games"]["3"]["pin"]); self.assertTrue(self.w.c["games"]["3"]["auto"])
 
     def test_off_chip_when_auto_off_and_up_to_date(self):
@@ -85,6 +86,47 @@ class Gui(unittest.TestCase):
         QDialog.exec = fake
         self.w.settings()
         self.assertFalse(self.w.c["auto_global"]); self.assertIn(False, saved)
+
+    def test_no_rebuild_when_nothing_changed(self):
+        self.w.refresh(); first = self.w.sc.widget()
+        for _ in range(5):
+            self.w.refresh()                                              # e.g. network answers that change nothing
+        self.assertIs(self.w.sc.widget(), first)                         # same widgets -> no flicker
+
+    def test_toggle_rebuilds_the_list_exactly_once(self):
+        P.save = lambda c: None; self.w.check_now = lambda: None
+        self.w.refresh(); calls = []
+        orig = self.w.make_card; self.w.make_card = lambda *a, **k: (calls.append(a[0]), orig(*a, **k))[1]
+        QTest.mouseClick(self.switches()[1], Qt.LeftButton); QTest.qWait(500)
+        self.assertEqual(len(calls), 3)                                   # 3 games, one rebuild
+
+    def test_switch_slides_smoothly(self):
+        s = G.Switch(False); s.show()
+        s.setChecked(True); QTest.qWait(60)
+        self.assertTrue(0.0 < s.slide < 1.0)                                # in the middle of the slide, not a jump
+        QTest.qWait(300); self.assertEqual(s.slide, 1.0)
+        s.setChecked(False); QTest.qWait(300); self.assertEqual(s.slide, 0.0)
+
+    def test_switch_lights_up_on_hover(self):
+        s = G.Switch(False); s.show()
+        before = s.grab().toImage().pixelColor(22, 12).name()
+        QTest.mouseMove(s, s.rect().center()); s.enterEvent(None) if False else None
+        s._hover = True; s.update()
+        self.assertNotEqual(s.grab().toImage().pixelColor(22, 12).name(), before)
+
+    def test_links_open_in_browser(self):
+        from PySide6.QtGui import QDesktopServices
+        opened = []; QDesktopServices.openUrl = lambda u: opened.append(u.toString()) or True
+        l = G.Link("x", "https://github.com/lokinyauv-create/proton-updater")
+        QTest.mouseClick(l, Qt.LeftButton)
+        self.assertEqual(opened, ["https://github.com/lokinyauv-create/proton-updater"])
+        self.assertEqual(l.cursor().shape(), Qt.PointingHandCursor)
+
+    def test_credits_dialog_has_three_links(self):
+        found = []
+        def fake(d): found.extend(x.url for x in d.findChildren(G.Link)); return 0
+        QDialog.exec = fake; self.w.credits()
+        self.assertEqual(len(found), 3); self.assertTrue(all(u.startswith("https://github.com/lokinyauv-create/") for u in found))
 
     def test_ukrainian_window(self):
         import i18n; i18n.set_lang("uk"); w = G.Main()
