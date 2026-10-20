@@ -24,6 +24,7 @@ Then open **Proton Updater** from your application menu. You can also download [
 
 ## Features
 
+- **Auto-update switch** per game and a master switch in Settings; with it off you only get a 🔔 and an *Update now* button.
 - Checks for new releases every 12 hours (a systemd timer wakes it every 30 min).
 - Downloads **only from the authors' official GitHub releases** and **verifies sha512**. On a mismatch it installs nothing.
 - Installs into `~/.local/share/Steam/compatibilitytools.d/`.
@@ -73,7 +74,7 @@ It copies the app to `~/.local/share/proton-updater`, creates the commands `prot
 ```bash
 python3 -m unittest discover -s tests -v
 ```
-23 tests run the whole flow (new release → download → checksum → switch) against a fake GitHub and a temporary fake Steam folder; nothing touches your real Steam.
+33 tests run the whole flow (new release → download → checksum → switch) against a fake GitHub and a temporary fake Steam folder; nothing touches your real Steam.
 
 ## Limitations (honestly)
 

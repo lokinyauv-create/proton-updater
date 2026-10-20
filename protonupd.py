@@ -7,6 +7,7 @@ Commands:
   protonupd.py check          — check for new versions now (and install)
   protonupd.py status         — show games and versions
   protonupd.py restart        — restart Steam and apply pending switches
+  protonupd.py auto on|off [APPID] — switch automatic updates (all, or one game)
   protonupd.py version        — show the version and whether a newer Proton Updater exists
   protonupd.py selfupdate     — update Proton Updater itself
   protonupd.py install SRC TAG — install a specific version
@@ -40,7 +41,7 @@ SOURCES = {
     },
 }
 DEFAULT = {"games": {"438100": {"name": "VRChat", "source": "ge", "pin": None}},
-           "keep": 2, "last_check": 0, "pending": {}, "lang": "auto", "custom": {}, "bell": {}, "notified_app": ""}
+           "keep": 2, "last_check": 0, "pending": {}, "lang": "auto", "custom": {}, "bell": {}, "notified_app": "", "auto_global": True}
 NAMES = CONF.parent / "installed.json"   # archive url -> {dir, tool, src} (needed for custom sources)
 REPO_RE = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
 
@@ -410,15 +411,33 @@ def restart_steam(c, log=print):
     subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
-def check(c, log=print):
+def auto_enabled(c, g):
+    """Does this game get new Proton versions installed automatically in the background?"""
+    return bool(c.get("auto_global", True)) and g.get("auto", True) and not g.get("pin")
+
+
+def check(c, log=print, background=False):
+    """Look for new releases. Installs/queues the switch for games that want it:
+    - automatic games (global switch on + the game's own switch on) always;
+    - pinned games get their pinned version (manual check only, or background if the global switch is on);
+    - games with auto-update OFF only get a bell + notification.
+    background=True is the timer: it obeys the global switch."""
     cache = {}
     for appid, g in c["games"].items():
         src = g["source"]
         if src not in cache:
             cache[src] = releases(src)
         newest = cache[src][0] if cache[src] else None
+        wants = g.get("auto", True) or bool(g.get("pin"))
+        if background and not c.get("auto_global", True):
+            wants = False
+        if not wants or (not g.get("pin") and not g.get("auto", True)):
+            if newest and needs_update(appid, g, newest) and c["bell"].get(appid) != newest["tag"]:
+                notify(tr("notify_pin_new", game=g["name"], ver=newest["name"]))      # bell: stays on current version
+                c["bell"][appid] = newest["tag"]
+            continue
         if newest and g.get("pin") and needs_update(appid, g, newest) and c["bell"].get(appid) != newest["tag"]:
-            notify(tr("notify_pin_new", game=g["name"], ver=newest["name"]))     # bell: pinned game has a newer Proton
+            notify(tr("notify_pin_new", game=g["name"], ver=newest["name"]))
             c["bell"][appid] = newest["tag"]
         rel = wanted_for(src, g, cache[src])
         if not rel:
@@ -429,6 +448,22 @@ def check(c, log=print):
     c["last_check"] = time.time()
     save(c)
     cleanup(c, log)
+    if c["pending"] and steam_running():
+        notify(tr("notify_ready"))
+
+
+def update_game(c, appid, log=print):
+    """'Update now' for one game: install its newest release and queue the switch (ignores the auto-update switch)."""
+    g = c["games"][appid]
+    rels = releases(g["source"])
+    if not rels:
+        return
+    tool = install(rels[0], log, g["source"] if SOURCES[g["source"]].get("custom") else None)
+    g["pin"] = None
+    if current_tool(appid) != tool:
+        c["pending"][appid] = tool
+    c["bell"].pop(appid, None)
+    save(c)
     if c["pending"] and steam_running():
         notify(tr("notify_ready"))
 
@@ -459,7 +494,7 @@ def run():
     apply_pending(c)
     if time.time() - c["last_check"] > 12 * 3600:
         try:
-            check(c)
+            check(c, background=True)
         except Exception as e:
             print(tr("check_failed", e=e), file=sys.stderr)
         apply_pending(c)
@@ -481,6 +516,14 @@ def main(a):
         check(c); apply_pending(c)
     elif cmd == "restart":
         restart_steam(c)
+    elif cmd == "auto":
+        if len(a) < 2 or a[1] not in ("on", "off"):
+            print("usage: proton-updater auto on|off [APPID]"); return
+        if len(a) > 2:
+            c["games"][a[2]]["auto"] = a[1] == "on"
+        else:
+            c["auto_global"] = a[1] == "on"
+        save(c); print(a[1])
     elif cmd == "version":
         print(f"Proton Updater {VERSION}")
         u = app_update()

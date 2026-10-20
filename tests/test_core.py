@@ -141,6 +141,52 @@ class Flow(Base):
             P.restart_steam(self.cfg(), lambda *_: None)
 
 
+class AutoSwitch(Base):
+    def test_auto_off_game_is_not_touched_but_bell_notified_once(self):
+        self.publish_ge(12)
+        c = self.cfg(**{"438100": {"name": "VRChat", "source": "ge", "pin": None, "auto": False}})
+        P.check(c, lambda *_: None); P.check(c, lambda *_: None)
+        self.assertFalse((P.COMPAT / "GE-Proton11-12-x86_64").exists())            # nothing downloaded
+        self.assertEqual(c["pending"], {}); P.apply_pending(c, lambda *_: None)
+        self.assertEqual(P.current_tool("438100"), "GE-Proton11-11-x86_64")
+        self.assertEqual(sum("VRChat" in n for n in self.notes), 1)
+
+    def test_auto_on_game_updates_by_itself(self):
+        self.publish_ge(12)
+        c = self.cfg(**{"438100": {"name": "VRChat", "source": "ge", "pin": None, "auto": True}})
+        P.check(c, lambda *_: None, background=True); P.apply_pending(c, lambda *_: None)
+        self.assertEqual(P.current_tool("438100"), "GE-Proton11-12-x86_64")
+
+    def test_global_off_blocks_background_but_not_manual(self):
+        self.publish_ge(12)
+        c = self.cfg(); c["auto_global"] = False
+        P.check(c, lambda *_: None, background=True)
+        self.assertFalse((P.COMPAT / "GE-Proton11-12-x86_64").exists()); self.assertEqual(c["pending"], {})
+        self.assertTrue(self.notes)                                                   # you are only told
+        P.check(c, lambda *_: None)                                                   # button pressed by hand
+        self.assertEqual(c["pending"], {"438100": "GE-Proton11-12-x86_64"})
+
+    def test_update_now_works_even_when_auto_is_off(self):
+        self.publish_ge(12)
+        c = self.cfg(**{"438100": {"name": "VRChat", "source": "ge", "pin": None, "auto": False}})
+        P.update_game(c, "438100", lambda *_: None); P.apply_pending(c, lambda *_: None)
+        self.assertEqual(P.current_tool("438100"), "GE-Proton11-12-x86_64")
+        self.assertFalse(c["games"]["438100"]["auto"])                               # the switch stays off
+
+    def test_turning_auto_back_on_catches_up(self):
+        self.publish_ge(12)
+        c = self.cfg(**{"438100": {"name": "VRChat", "source": "ge", "pin": None, "auto": False}})
+        P.check(c, lambda *_: None); self.assertEqual(c["pending"], {})
+        c["games"]["438100"]["auto"] = True
+        P.check(c, lambda *_: None); self.assertEqual(c["pending"], {"438100": "GE-Proton11-12-x86_64"})
+
+    def test_cli_switches_persist(self):
+        P.main(["auto", "off"]); self.assertFalse(P.load()["auto_global"])
+        P.main(["auto", "on"]); self.assertTrue(P.load()["auto_global"])
+        c = P.load(); c["games"]["438100"] = {"name": "V", "source": "ge", "pin": None}; P.save(c)
+        P.main(["auto", "off", "438100"]); self.assertFalse(P.load()["games"]["438100"]["auto"])
+
+
 class Custom(Base):
     def test_custom_source_end_to_end(self):
         fn = "proton-em-10.0-34.tar.xz"

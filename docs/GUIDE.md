@@ -19,6 +19,24 @@ Steam runs Windows games on Linux through a layer called **Proton**. Some games 
 
 That's all. You can close the window — a background timer keeps watching.
 
+## Auto-update on / off
+
+Every game card has an **Auto-update** switch.
+
+| Switch | What happens |
+|---|---|
+| **On** (purple) | New Proton versions are downloaded and the game is switched by itself. |
+| **Off** (grey) | The game stays on its current version. You still get a 🔔 and a notification when a newer version is out, and an **Update now** button appears on the card. |
+
+Choosing a specific version with **Version…** also turns the switch off (the version is pinned); switching it **on** again returns the game to “always latest” and catches up right away.
+
+**Settings → Automatic background updates** is the master switch for everything. When it is off, nothing is downloaded or switched in the background — you only get notifications and update with the buttons (**Check for updates** and **Update now** still work).
+
+```bash
+proton-updater auto off            # master switch off
+proton-updater auto on 438100      # switch on for one game (VRChat)
+```
+
 ## The bell 🔔
 
 A bell means **a newer Proton has been released than the one this game uses**. It appears next to the game's status and on the **Version…** button; hover it to see which version. You also get a desktop notification (once per release) — for pinned games too, so you know the moment a newer version is out while the game stays on its pinned one.
