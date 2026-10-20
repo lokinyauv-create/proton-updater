@@ -3,11 +3,74 @@
 """Proton Updater window."""
 import subprocess, sys, threading
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout,
-                               QHeaderView, QLabel, QListWidget, QMessageBox, QPlainTextEdit, QPushButton,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
+                               QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout,
+                               QWidget)
 import protonupd as P
 from i18n import set_lang, tr
+
+QSS = """
+* { font-size: 13px; color: #cdd6f4; }
+QWidget#root, QDialog { background: #1e1e2e; }
+QLabel#title { font-size: 24px; font-weight: 700; }
+QLabel#sub, QLabel#muted, QLabel#footer { color: #a6adc8; }
+QLabel#footer { font-size: 11px; }
+QFrame#banner { background: #313244; border-radius: 12px; border-left: 5px solid #a6e3a1; }
+QFrame#banner[state="update"] { border-left-color: #f9e2af; }
+QFrame#banner[state="busy"] { border-left-color: #89b4fa; }
+QLabel#bannerTitle { font-size: 16px; font-weight: 600; }
+QFrame#card { background: #313244; border-radius: 12px; }
+QLabel#gameName { font-size: 16px; font-weight: 600; }
+QLabel#chip { border-radius: 9px; padding: 2px 10px; font-size: 12px; font-weight: 600; background: #45475a; }
+QLabel#chip[kind="ok"] { background: rgba(166,227,161,0.18); color: #a6e3a1; }
+QLabel#chip[kind="update"] { background: rgba(249,226,175,0.18); color: #f9e2af; }
+QLabel#chip[kind="pending"] { background: rgba(137,180,250,0.18); color: #89b4fa; }
+QLabel#chip[kind="pinned"] { background: rgba(203,166,247,0.18); color: #cba6f7; }
+QPushButton { background: #45475a; border: none; border-radius: 8px; padding: 8px 16px; }
+QPushButton:hover { background: #585b70; }
+QPushButton:disabled { color: #6c7086; background: #3a3b4c; }
+QPushButton#primary { background: #cba6f7; color: #1e1e2e; font-weight: 700; padding: 10px 20px; }
+QPushButton#primary:hover { background: #d9bcfa; }
+QPushButton#primary:disabled { background: #6c5a85; color: #2b2b3b; }
+QPushButton#flat { background: transparent; color: #a6adc8; padding: 6px 10px; }
+QPushButton#flat:hover { background: #45475a; color: #cdd6f4; }
+QPushButton#danger { background: transparent; color: #a6adc8; padding: 6px 10px; }
+QPushButton#danger:hover { background: rgba(243,139,168,0.2); color: #f38ba8; }
+QPushButton#addcard { background: transparent; border: 2px dashed #45475a; border-radius: 12px; color: #a6adc8; padding: 14px; }
+QPushButton#addcard:hover { border-color: #cba6f7; color: #cba6f7; }
+QScrollArea { border: none; background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+QListWidget, QPlainTextEdit, QComboBox { background: #181825; border: 1px solid #45475a; border-radius: 8px; padding: 6px; }
+QListWidget::item { padding: 6px; border-radius: 6px; }
+QListWidget::item:selected { background: #cba6f7; color: #1e1e2e; }
+QComboBox QAbstractItemView { background: #181825; selection-background-color: #cba6f7; selection-color: #1e1e2e; }
+QScrollBar:vertical { background: transparent; width: 10px; }
+QScrollBar::handle:vertical { background: #45475a; border-radius: 5px; min-height: 30px; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+QToolTip { background: #181825; color: #cdd6f4; border: 1px solid #45475a; }
+"""
+
+
+def lab(text, name=None, wrap=False):
+    l = QLabel(text)
+    if name:
+        l.setObjectName(name)
+    l.setWordWrap(wrap)
+    return l
+
+
+def btn(text, name=None, fn=None):
+    b = QPushButton(text)
+    if name:
+        b.setObjectName(name)
+    b.setCursor(Qt.PointingHandCursor)
+    if fn:
+        b.clicked.connect(fn)
+    return b
+
+
+def repolish(w):
+    w.style().unpolish(w); w.style().polish(w)
 
 
 class Bg(QObject):
@@ -27,119 +90,179 @@ class Main(QWidget):
     def __init__(self):
         super().__init__()
         self.c = P.load()               # also sets the UI language
-        self.setWindowTitle(tr("app_title"))
-        self.resize(940, 480)
         self.latest = {}
-        v = QVBoxLayout(self)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels([tr("col_game"), tr("col_source"), tr("col_now"),
-                                              tr("col_latest"), tr("col_version")])
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        v.addWidget(self.table)
-        self.info = QLabel(tr("info")); self.info.setWordWrap(True)
-        v.addWidget(self.info)
-        for buttons in ([("b_add", self.add_game), ("b_remove", self.remove_game), ("b_pick", self.pick_version),
-                         ("b_unpin", self.unpin)],
-                        [("b_check", self.check_now), ("b_restart", self.restart_steam), ("b_about", self.about),
-                         ("b_settings", self.settings), ("b_credits", self.credits)]):
-            row = QHBoxLayout()
-            for key, fn in buttons:
-                b = QPushButton(tr(key)); b.clicked.connect(fn); row.addWidget(b)
-            v.addLayout(row)
-        self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(100)
-        v.addWidget(self.log)
-        foot = QLabel(tr("footer")); foot.setAlignment(Qt.AlignCenter); foot.setEnabled(False)
-        v.addWidget(foot)
+        self.busy = False
+        self.setObjectName("root")
+        self.setStyleSheet(QSS)
+        self.setWindowTitle(tr("app_title"))
+        self.resize(820, 700)
+        v = QVBoxLayout(self); v.setContentsMargins(28, 24, 28, 16); v.setSpacing(14)
+
+        head = QHBoxLayout()
+        t = QVBoxLayout(); t.setSpacing(2)
+        t.addWidget(lab(tr("app_title"), "title")); t.addWidget(lab(tr("hdr_sub"), "sub"))
+        head.addLayout(t); head.addStretch()
+        head.addWidget(btn(tr("b_settings"), "flat", self.settings))
+        head.addWidget(btn(tr("b_credits"), "flat", self.credits))
+        v.addLayout(head)
+
+        self.banner = QFrame(); self.banner.setObjectName("banner")
+        bl = QHBoxLayout(self.banner); bl.setContentsMargins(18, 14, 14, 14)
+        bt = QVBoxLayout(); bt.setSpacing(2)
+        self.b_title = lab("", "bannerTitle", True); self.b_sub = lab("", "muted")
+        bt.addWidget(self.b_title); bt.addWidget(self.b_sub)
+        bl.addLayout(bt, 1)
+        self.b_apply = btn(tr("b_apply"), None, self.restart_steam)
+        self.b_check = btn(tr("b_check_main"), "primary", self.check_now)
+        bl.addWidget(self.b_apply); bl.addWidget(self.b_check)
+        v.addWidget(self.banner)
+
+        sc = QScrollArea(); sc.setWidgetResizable(True)
+        host = QWidget(); self.cards = QVBoxLayout(host); self.cards.setContentsMargins(0, 0, 6, 0); self.cards.setSpacing(10)
+        sc.setWidget(host)
+        v.addWidget(sc, 1)
+
+        self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(110); self.log.hide()
+        row = QHBoxLayout()
+        self.b_det = btn(tr("b_details"), "flat", lambda: self.log.setVisible(not self.log.isVisible()))
+        row.addWidget(self.b_det); row.addStretch()
+        row.addWidget(lab(tr("footer"), "footer"))
+        v.addWidget(self.log); v.addLayout(row)
+
         self.bg = Bg(); self.bg.line.connect(self.log.appendPlainText)
         self.bg.done.connect(self._fetched)
         self.refresh()
         self.bg.run(lambda log: {s: P.releases(s)[:1] for s in P.SOURCES})
 
+    # ---------- state ----------
     def _fetched(self, res, err):
         if isinstance(res, dict) and not err and "ge" in res:
             self.latest = {s: (r[0]["name"] if r else "?") for s, r in res.items()}
             self.refresh()
 
-    def refresh(self):
-        self.table.setRowCount(0)
-        for appid, g in self.c["games"].items():
-            r = self.table.rowCount(); self.table.insertRow(r)
-            cur = P.current_tool(appid) or "—"
-            if appid in self.c["pending"]:
-                cur += tr("pending_note", t=self.c["pending"][appid])
-            vals = [g["name"], tr("src_" + g["source"]), cur, self.latest.get(g["source"], "…"),
-                    g.get("pin") or tr("always_latest")]
-            for i, t in enumerate(vals):
-                it = QTableWidgetItem(t); it.setData(Qt.UserRole, appid); self.table.setItem(r, i, it)
+    def status(self, appid, g):
+        cur = P.current_tool(appid)
+        if appid in self.c["pending"]:
+            return "pending", tr("st_pending")
+        if g.get("pin"):
+            return "pinned", tr("st_pinned")
+        lat = self.latest.get(g["source"])
+        if lat and cur and cur != lat:
+            return "update", tr("st_update")
+        return "ok", tr("st_ok")
 
-    def sel(self):
-        r = self.table.currentRow()
-        return self.table.item(r, 0).data(Qt.UserRole) if r >= 0 else None
+    def refresh(self):
+        while self.cards.count():
+            w = self.cards.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        kinds = []
+        for appid, g in self.c["games"].items():
+            k, text = self.status(appid, g); kinds.append(k)
+            self.cards.addWidget(self.make_card(appid, g, k, text))
+        if not self.c["games"]:
+            self.cards.addWidget(lab(tr("no_games"), "muted"))
+        self.cards.addWidget(btn(tr("b_add_card"), "addcard", self.add_game))
+        self.cards.addStretch()
+
+        pending = bool(self.c["pending"])
+        if self.busy:
+            state, title = "busy", tr("banner_busy")
+        elif pending:
+            state, title = "update", tr("banner_pending2") if P.steam_running() else tr("banner_pending")
+        elif "update" in kinds:
+            state, title = "update", tr("banner_update")
+        else:
+            state, title = "ok", tr("banner_ok")
+        self.banner.setProperty("state", state); repolish(self.banner)
+        self.b_title.setText(title)
+        self.b_sub.setText(tr("steam_on") if P.steam_running() else tr("steam_off"))
+        self.b_apply.setVisible(pending and not self.busy)
+        self.b_check.setEnabled(not self.busy)
+        self.b_apply.setEnabled(not self.busy)
+
+    def make_card(self, appid, g, kind, status_text):
+        f = QFrame(); f.setObjectName("card")
+        h = QHBoxLayout(f); h.setContentsMargins(18, 14, 12, 14); h.setSpacing(14)
+        left = QVBoxLayout(); left.setSpacing(3)
+        top = QHBoxLayout(); top.setSpacing(10)
+        top.addWidget(lab(g["name"], "gameName"))
+        chip = lab(status_text, "chip"); chip.setProperty("kind", kind); top.addWidget(chip); top.addStretch()
+        left.addLayout(top)
+        left.addWidget(lab(tr("src_" + g["source"]), "muted"))
+        cur = P.current_tool(appid) or "—"
+        lat = g["pin"] if g.get("pin") else self.latest.get(g["source"], "…")
+        left.addWidget(lab(f"{tr('lbl_now')}: {cur}     {tr('lbl_latest') if not g.get('pin') else tr('st_pinned')}: {lat}", "muted"))
+        h.addLayout(left, 1)
+        h.addWidget(btn(tr("b_version"), "flat", lambda _=0, a=appid: self.pick_version(a)))
+        h.addWidget(btn(tr("b_where"), "flat", lambda _=0, a=appid: self.about(a)))
+        h.addWidget(btn("✕", "danger", lambda _=0, a=appid: self.remove_game(a)))
+        h.itemAt(h.count() - 1).widget().setToolTip(tr("b_remove_x"))
+        return f
 
     def save(self):
         P.save(self.c); self.refresh()
 
-    def _dialog(self, title, w, h=None):
-        d = QDialog(self); d.setWindowTitle(title)
-        if h:
-            d.resize(w, h)
-        return d, QVBoxLayout(d)
+    def _dialog(self, title, w, h):
+        d = QDialog(self); d.setWindowTitle(title); d.resize(w, h); d.setStyleSheet(QSS)
+        l = QVBoxLayout(d); l.setContentsMargins(22, 20, 22, 18); l.setSpacing(12)
+        return d, l
 
+    @staticmethod
+    def _ok_cancel(d, l):
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(d.accept); bb.rejected.connect(d.reject); l.addWidget(bb)
+        bb.button(QDialogButtonBox.Ok).setObjectName("primary")
+
+    # ---------- actions ----------
     def add_game(self):
-        d, l = self._dialog(tr("add_title"), 420, 480)
+        d, l = self._dialog(tr("add_title"), 460, 520)
+        l.addWidget(lab(tr("add_hint"), "muted", True))
         lst = QListWidget()
         games = {a: n for a, n in P.steam_games().items() if a not in self.c["games"]}
         for a, n in games.items():
-            lst.addItem(f"{n}  [{a}]")
-        l.addWidget(lst)
+            lst.addItem(n)
+        l.addWidget(lst, 1)
         cb = QComboBox()
         for k in P.SOURCES:
             cb.addItem(tr("src_" + k), k)
         l.addWidget(cb)
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.accepted.connect(d.accept); bb.rejected.connect(d.reject); l.addWidget(bb)
+        self._ok_cancel(d, l)
         if d.exec() and lst.currentRow() >= 0:
             a = list(games)[lst.currentRow()]
             self.c["games"][a] = {"name": games[a], "source": cb.currentData(), "pin": None}
             self.save()
 
-    def remove_game(self):
-        a = self.sel()
-        if a and QMessageBox.question(self, tr("rm_title"), tr("rm_q")) == QMessageBox.Yes:
+    def remove_game(self, a):
+        if QMessageBox.question(self, tr("rm_title"), tr("rm_q")) == QMessageBox.Yes:
             self.c["games"].pop(a, None); self.c["pending"].pop(a, None); self.save()
 
-    def unpin(self):
-        a = self.sel()
-        if a:
-            self.c["games"][a]["pin"] = None; self.save()
-
-    def pick_version(self):
-        a = self.sel()
-        if not a:
-            return
+    def pick_version(self, a):
         try:
             rels = P.releases(self.c["games"][a]["source"], 40)
         except Exception as e:
             QMessageBox.warning(self, tr("error"), str(e)); return
-        d, l = self._dialog(tr("pick_title"), 520, 480)
+        d, l = self._dialog(tr("pick_title"), 520, 560)
+        l.addWidget(lab(tr("pin_hint"), "muted", True))
         lst = QListWidget()
+        lst.addItem(f"★  {tr('always_latest')}")
         for r in rels:
-            lst.addItem(f"{r['name']}   {r['date']}   {r['size'] // 1048576} {tr('mb')}")
-        l.addWidget(lst)
-        n = QLabel(tr("pick_note")); n.setWordWrap(True); l.addWidget(n)
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.accepted.connect(d.accept); bb.rejected.connect(d.reject); l.addWidget(bb)
+            lst.addItem(f"{r['name']}      {r['date']}      {r['size'] // 1048576} {tr('mb')}")
+        lst.setCurrentRow(0)
+        l.addWidget(lst, 1)
+        l.addWidget(lab(tr("pick_note"), "muted", True))
+        self._ok_cancel(d, l)
         if d.exec() and lst.currentRow() >= 0:
-            self.c["games"][a]["pin"] = rels[lst.currentRow()]["name"]
+            i = lst.currentRow()
+            self.c["games"][a]["pin"] = None if i == 0 else rels[i - 1]["name"]
             self.save()
             self.check_now()
 
     def _job(self, fn, start_msg):
+        self.busy = True
         self.log.appendPlainText(start_msg)
         self.bg.done.disconnect(); self.bg.done.connect(self._finished)
+        self.refresh()
         self.bg.run(fn)
 
     def check_now(self):
@@ -161,17 +284,17 @@ class Main(QWidget):
         self._job(job, tr("restarting"))
 
     def _finished(self, c, err):
+        self.busy = False
         self.bg.done.disconnect(); self.bg.done.connect(self._fetched)
         if err:
-            self.log.appendPlainText(tr("error_line", e=err)); return
-        self.c = c
-        self.log.appendPlainText(tr("done_pending") if c["pending"] and P.steam_running() else tr("done"))
+            self.log.appendPlainText(tr("error_line", e=err)); self.log.show()
+        else:
+            self.c = c
+            self.log.appendPlainText(tr("done"))
+            self.bg.run(lambda log: {s: P.releases(s)[:1] for s in P.SOURCES})
         self.refresh()
 
-    def about(self):
-        a = self.sel()
-        if not a:
-            QMessageBox.information(self, tr("b_about"), tr("select_game")); return
+    def about(self, a):
         g = self.c["games"][a]; s = P.SOURCES[g["source"]]
         cur = P.current_tool(a)
         try:
@@ -187,31 +310,29 @@ class Main(QWidget):
         else:
             t += ["", tr("about_missing")]
         t += ["", tr("about_foot")]
-        d, l = self._dialog(tr("b_about"), 780, 320)
-        box = QPlainTextEdit("\n".join(t)); box.setReadOnly(True); l.addWidget(box)
-        row = QHBoxLayout()
+        d, l = self._dialog(tr("b_where"), 780, 360)
+        box = QPlainTextEdit("\n".join(t)); box.setReadOnly(True); l.addWidget(box, 1)
+        row = QHBoxLayout(); row.addStretch()
         url = (rel or {}).get("page") or f"https://github.com/{s['repo']}"
-        b = QPushButton(tr("open_page")); b.clicked.connect(lambda: subprocess.Popen(["xdg-open", url]))
-        c = QPushButton(tr("close")); c.clicked.connect(d.accept)
-        row.addWidget(b); row.addWidget(c); l.addLayout(row)
+        row.addWidget(btn(tr("open_page"), None, lambda: subprocess.Popen(["xdg-open", url])))
+        row.addWidget(btn(tr("close"), "primary", d.accept)); l.addLayout(row)
         d.exec()
 
     def settings(self):
-        d, l = self._dialog(tr("settings_title"), 360, 140)
-        l.addWidget(QLabel(tr("lang_label")))
+        d, l = self._dialog(tr("settings_title"), 380, 180)
+        l.addWidget(lab(tr("lang_label"), "muted"))
         cb = QComboBox()
         cb.addItem(tr("lang_auto"), "auto"); cb.addItem("English", "en"); cb.addItem("Українська", "uk")
         cb.setCurrentIndex(max(0, cb.findData(self.c.get("lang", "auto"))))
-        l.addWidget(cb)
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.accepted.connect(d.accept); bb.rejected.connect(d.reject); l.addWidget(bb)
+        l.addWidget(cb); l.addStretch()
+        self._ok_cancel(d, l)
         if d.exec() and cb.currentData() != self.c.get("lang"):
             self.c["lang"] = cb.currentData()
             P.save(self.c)
             set_lang(self.c["lang"])
             global win
             old, win = win, Main()      # rebuild the window in the new language
-            win.move(old.pos()); win.show(); old.close()
+            win.move(old.pos()); win.resize(old.size()); win.show(); old.close()
 
     def credits(self):
         QMessageBox.about(self, tr("credits_title"), tr("credits"))
