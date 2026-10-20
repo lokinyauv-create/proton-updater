@@ -8,6 +8,10 @@
 
 A small Linux tool that **watches for new GE-Proton (and proton-rtsp) releases, installs them, and switches the Steam games you choose** to the new version. Made because VRChat on Linux wants a fresh Proton, and changing it by hand after every release gets old.
 
+![Screenshot](docs/img/main-en.png)
+
+**Documentation:** [User guide with screenshots, FAQ and troubleshooting](docs/GUIDE.md) · [Security & privacy](SECURITY.md) · [Changelog](CHANGELOG.md)
+
 ## Install in one step
 
 Paste this into a terminal (it downloads and installs everything, no root needed):

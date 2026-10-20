@@ -212,7 +212,8 @@ class Main(QWidget):
     def _ok_cancel(d, l):
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(d.accept); bb.rejected.connect(d.reject); l.addWidget(bb)
-        bb.button(QDialogButtonBox.Ok).setObjectName("primary")
+        ok = bb.button(QDialogButtonBox.Ok)
+        ok.setObjectName("primary"); repolish(ok)
 
     # ---------- actions ----------
     def add_game(self):
