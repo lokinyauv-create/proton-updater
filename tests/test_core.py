@@ -122,6 +122,13 @@ class Flow(Base):
         self.assertEqual(P.current_tool("438100"), "GE-Proton11-11-x86_64")
         t = P.CFG_VDF.read_text(); self.assertEqual(t.count("{"), t.count("}"))
 
+    def test_missing_mapping_section_is_created(self):
+        P.CFG_VDF.write_text('"InstallConfigStore"\n{\n\t"Software"\n\t{\n\t\t"Valve"\n\t\t{\n\t\t\t"Steam"\n\t\t\t{\n'
+                             '\t\t\t\t"AutoUpdateWindowEnabled"\t\t"0"\n\t\t\t}\n\t\t}\n\t}\n}\n')
+        self.publish_ge(12); c = self.cfg(); P.check(c, lambda *_: None); P.apply_pending(c, lambda *_: None)
+        self.assertEqual(P.current_tool("438100"), "GE-Proton11-12-x86_64")
+        t = P.CFG_VDF.read_text(); self.assertEqual(t.count("{"), t.count("}"))
+
     def test_backup_of_config_is_made(self):
         self.publish_ge(12); c = self.cfg(); P.check(c, lambda *_: None); P.apply_pending(c, lambda *_: None)
         self.assertTrue(Path(str(P.CFG_VDF) + ".bak-protonupd").exists())

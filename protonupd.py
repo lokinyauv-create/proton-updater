@@ -287,7 +287,13 @@ def set_tool(appid, tool):
     t = CFG_VDF.read_text(encoding="utf-8")
     i = t.find('"CompatToolMapping"')
     if i < 0:
-        raise RuntimeError(tr("no_mapping"))
+        # Steam only writes this section once some game got a compatibility tool picked by hand;
+        # create it inside Software/Valve/Steam
+        m = re.search(r'"Software"\s*\{\s*"Valve"\s*\{\s*"Steam"\s*\{', t, re.I)
+        if not m:
+            raise RuntimeError(tr("no_mapping"))
+        t = t[:m.end()] + '\n\t\t\t\t"CompatToolMapping"\n\t\t\t\t{\n\t\t\t\t}' + t[m.end():]
+        i = t.find('"CompatToolMapping"')
     pat = re.compile(r'("%s"\s*\{\s*"name"\s*")[^"]*(")' % appid)
     m = pat.search(t, i)
     if m:
