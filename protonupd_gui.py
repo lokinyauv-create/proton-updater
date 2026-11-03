@@ -3,7 +3,7 @@
 """Proton Updater window."""
 import os, subprocess, sys, threading, time
 from PySide6.QtCore import Property, QEasingCurve, QObject, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QPainter
+from PySide6.QtGui import QColor, QDesktopServices, QLinearGradient, QPainter, QPainterPath
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QTextBrowser, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
                                QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout,
@@ -22,6 +22,10 @@ QFrame#banner { background: #313244; border-radius: 12px; border-left: 5px solid
 QFrame#banner[state="update"] { border-left-color: #f9e2af; }
 QFrame#banner[state="busy"] { border-left-color: #89b4fa; }
 QLabel#bannerTitle { font-size: 16px; font-weight: 600; }
+QFrame#dlcard { background: #313244; border-radius: 12px; border-left: 5px solid #89b4fa; }
+QLabel#dlTitle { font-size: 15px; font-weight: 600; }
+QLabel#dlPct { font-size: 22px; font-weight: 700; color: #cba6f7; }
+QLabel#dlStats { color: #a6adc8; font-size: 12px; }
 QFrame#appbanner { background: rgba(203,166,247,0.14); border-radius: 12px; border-left: 5px solid #cba6f7; }
 QLabel#chip[kind="off"] { background: #45475a; color: #a6adc8; }
 QLabel#link { color: #cba6f7; text-decoration: underline; }
@@ -142,9 +146,59 @@ def repolish(w):
     w.style().unpolish(w); w.style().polish(w)
 
 
+class Bar(QWidget):
+    """Rounded progress bar: smooth gradient fill with a soft moving shine. Indeterminate when value < 0."""
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(14)
+        self._v = 0.0; self.shown = 0.0; self.phase = 0.0
+        self.t = QTimer(self); self.t.timeout.connect(self._tick); self.t.start(30)
+
+    def setValue(self, v):
+        self._v = v
+
+    def _tick(self):
+        if not self.isVisible():
+            return
+        self.phase = (self.phase + 0.02) % 1.0
+        if self._v >= 0:
+            self.shown += (self._v - self.shown) * 0.25      # glide to the real value
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height(); r = h / 2
+        p.setPen(Qt.NoPen); p.setBrush(QColor("#181825")); p.drawRoundedRect(QRectF(0, 0, w, h), r, r)
+        if self._v < 0:                                       # indeterminate: a pill sliding back and forth
+            seg = w * 0.3; x = (w + seg) * self.phase - seg
+            clip = QPainterPath(); clip.addRoundedRect(QRectF(0, 0, w, h), r, r); p.setClipPath(clip)
+            gr = QLinearGradient(x, 0, x + seg, 0)
+            gr.setColorAt(0, QColor(203, 166, 247, 0)); gr.setColorAt(.5, QColor("#cba6f7")); gr.setColorAt(1, QColor(137, 180, 250, 0))
+            p.setBrush(gr); p.drawRect(QRectF(x, 0, seg, h)); return
+        fw = max(h, w * min(self.shown, 1.0)) if self.shown > 0.001 else 0
+        if fw:
+            gr = QLinearGradient(0, 0, w, 0); gr.setColorAt(0, QColor("#cba6f7")); gr.setColorAt(1, QColor("#89b4fa"))
+            clip = QPainterPath(); clip.addRoundedRect(QRectF(0, 0, fw, h), r, r); p.setClipPath(clip)
+            p.setBrush(gr); p.drawRect(QRectF(0, 0, fw, h))
+            sx = (fw + 80) * self.phase - 80                  # shine
+            sh = QLinearGradient(sx, 0, sx + 80, 0)
+            sh.setColorAt(0, QColor(255, 255, 255, 0)); sh.setColorAt(.5, QColor(255, 255, 255, 70)); sh.setColorAt(1, QColor(255, 255, 255, 0))
+            p.setBrush(sh); p.drawRect(QRectF(sx, 0, 80, h))
+
+
+def fmt_mb(b):
+    return f"{b / 1048576:.1f}".replace(".", ",") if P.tr("mb") == "МБ" else f"{b / 1048576:.1f}"
+
+
+def fmt_eta(s):
+    s = int(s)
+    return f"{s // 60} {tr('dl_m')} {s % 60} {tr('dl_s')}" if s >= 60 else f"{s} {tr('dl_s')}"
+
+
 class Bg(QObject):
     done = Signal(object, object)   # result, error
     line = Signal(str)
+    prog = Signal(str, object, object, str)   # kind, done, total, name
 
     def run(self, fn):
         def w():
@@ -192,6 +246,16 @@ class Main(QWidget):
         bl.addWidget(self.b_apply); bl.addWidget(self.b_check)
         v.addWidget(self.banner)
 
+        self.dl = QFrame(); self.dl.setObjectName("dlcard")
+        dv = QVBoxLayout(self.dl); dv.setContentsMargins(18, 12, 18, 14); dv.setSpacing(8)
+        dh = QHBoxLayout()
+        self.dl_title = lab("", "dlTitle"); self.dl_pct = lab("", "dlPct")
+        dh.addWidget(self.dl_title, 1); dh.addWidget(self.dl_pct)
+        self.dl_bar = Bar(); self.dl_stats = lab("", "dlStats")
+        dv.addLayout(dh); dv.addWidget(self.dl_bar); dv.addWidget(self.dl_stats)
+        self.dl.hide(); self._dl_t0 = 0; self._dl_name = ""
+        v.addWidget(self.dl)
+
         self.appbanner = QFrame(); self.appbanner.setObjectName("appbanner")
         ab = QHBoxLayout(self.appbanner); ab.setContentsMargins(18, 10, 12, 10)
         self.ab_title = lab("", "bannerTitle", True)
@@ -219,6 +283,8 @@ class Main(QWidget):
         v.addWidget(self.logbar); v.addWidget(self.log); v.addLayout(row)
 
         self.bg = Bg(); self.bg.line.connect(self.add_log)
+        self.bg.prog.connect(self.on_progress)
+        P.progress = lambda k, d, t, n: self.bg.prog.emit(k, d, t, n)
         self.bg.done.connect(self._fetched)
         self.refresh()
         self.bg.run(self._fetch)
@@ -248,6 +314,25 @@ class Main(QWidget):
             self.load_failed = True
         self.loaded = True
         self.refresh()
+
+    def on_progress(self, kind, done, total, name):
+        if kind == "end":
+            self.dl.hide(); return
+        if not self.dl.isVisible() or name != self._dl_name:
+            self._dl_name = name; self._dl_t0 = time.monotonic(); self.dl.show()
+        if kind == "unpack":
+            self.dl_title.setText(tr("dl_unpack", name=name)); self.dl_pct.setText("")
+            self.dl_bar.setValue(-1); self.dl_stats.setText(""); return
+        self.dl_title.setText(tr("dl_title", name=name))
+        el = max(time.monotonic() - self._dl_t0, 0.001)
+        speed = done / el
+        if total:
+            self.dl_bar.setValue(done / total); self.dl_pct.setText(f"{done * 100 // total}%")
+            eta = f"  ·  {tr('dl_eta', s=fmt_eta((total - done) / speed))}" if speed > 1 and done else ""
+            self.dl_stats.setText(f"{fmt_mb(done)} / {fmt_mb(total)} {tr('mb')}  ·  {fmt_mb(speed)} {tr('dl_mbs')}{eta}")
+        else:
+            self.dl_bar.setValue(-1); self.dl_pct.setText("")
+            self.dl_stats.setText(f"{fmt_mb(done)} {tr('mb')}  ·  {fmt_mb(speed)} {tr('dl_mbs')}")
 
     def bell(self, appid, g):
         return P.needs_update(appid, g, self.latest_rel.get(g["source"]))
@@ -323,7 +408,8 @@ class Main(QWidget):
         if self.b_title.text() != title:
             self.b_title.setText(title)
         self.b_sub.setText(tr("steam_on") if P.steam_running() else tr("steam_off"))
-        self.b_apply.setVisible(pending and not self.busy)
+        has_bell = any(self.bell(a, gm) for a, gm in self.c["games"].items())
+        self.b_apply.setVisible((pending or (has_bell and P.steam_running())) and not self.busy)
         self.b_check.setEnabled(not self.busy)
         self.b_apply.setEnabled(not self.busy)
 
@@ -464,7 +550,12 @@ class Main(QWidget):
             return
         def job(log):
             c = P.load(); c["games"] = self.c["games"]
-            P.check(c, log); P.restart_steam(c, log)
+            P.check(c, log)
+            for a, gm in list(c["games"].items()):          # bring everything up to date first (progress bar shows)
+                rel = self.latest_rel.get(gm["source"])
+                if rel and P.needs_update(a, gm, rel) and not gm.get("pin"):
+                    P.update_game(c, a, log)
+            P.restart_steam(c, log)
             return c
         self._job(job, tr("restarting"))
 

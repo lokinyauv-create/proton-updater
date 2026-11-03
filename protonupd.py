@@ -221,6 +221,29 @@ def internal_name(d):
         return None
 
 
+progress = None      # optional hook for the window: progress(kind, done, total, name); kind = dl | unpack | end
+
+
+def _report(*a):
+    if progress:
+        try: progress(*a)
+        except Exception: pass
+
+
+def download(req, dest, name, h=None, total=0):
+    """Stream a URL into a file, reporting progress (throttled) to the window."""
+    done, last = 0, 0.0
+    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as o:
+        total = int(r.headers.get("Content-Length") or 0) or total
+        _report("dl", 0, total, name)
+        while chunk := r.read(1 << 18):
+            o.write(chunk); done += len(chunk)
+            if h: h.update(chunk)
+            if time.monotonic() - last > 0.1:
+                last = time.monotonic(); _report("dl", done, total, name)
+        _report("dl", done, total, name)
+
+
 def install(rel, log=print, src=None):
     """Download, verify and unpack a release. Returns the tool name to give Steam."""
     known = names().get(rel["url"])
@@ -235,9 +258,11 @@ def install(rel, log=print, src=None):
         log(tr("dl", name=rel["name"], mb=rel["size"] // 1048576))
         req = urllib.request.Request(rel["url"], headers={"User-Agent": "proton-updater"})
         h = hashlib.new(rel.get("algo") or "sha512")
-        with urllib.request.urlopen(req, timeout=60) as r, open(f, "wb") as o:
-            while chunk := r.read(1 << 20):
-                o.write(chunk); h.update(chunk)
+        try:
+            download(req, f, rel["name"], h, rel.get("size", 0))
+        except BaseException:
+            _report("end", 0, 0, "")
+            raise
         if rel["sha"]:
             want = urllib.request.urlopen(urllib.request.Request(rel["sha"], headers={"User-Agent": "proton-updater"}),
                                           timeout=30).read().split()[0].decode()
@@ -247,8 +272,12 @@ def install(rel, log=print, src=None):
         else:
             log(tr("sha_none"))
         ex = tmp / "x"; ex.mkdir()
-        with tarfile.open(f) as t:
-            t.extractall(ex, filter="data")
+        _report("unpack", 0, 0, rel["name"])
+        try:
+            with tarfile.open(f) as t:
+                t.extractall(ex, filter="data")
+        finally:
+            _report("end", 0, 0, "")
         top = [p for p in ex.iterdir() if p.is_dir()]
         if len(top) != 1:
             raise RuntimeError(tr("bad_archive"))
@@ -363,8 +392,10 @@ def update_self(info, log=print):
         url = f"https://codeload.github.com/{APP_REPO}/tar.gz/refs/tags/{info['tag']}"
         log(tr("dl", name=f"Proton Updater {info['version']}", mb=1))
         req = urllib.request.Request(url, headers={"User-Agent": "proton-updater"})
-        with urllib.request.urlopen(req, timeout=60) as r, open(f, "wb") as o:
-            shutil.copyfileobj(r, o)
+        try:
+            download(req, f, f"Proton Updater {info['version']}")
+        finally:
+            _report("end", 0, 0, "")
         with tarfile.open(f) as t:
             t.extractall(tmp, filter="data")
         d = next(x for x in Path(tmp).iterdir() if x.is_dir())
