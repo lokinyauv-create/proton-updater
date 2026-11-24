@@ -36,7 +36,7 @@ P.load = lambda: {"games": {
 APP = {"version": "9.9.0", "tag": "v9.9.0", "page": "https://github.com/lokinyauv-create/proton-updater/releases", "notes": ""}
 G.Main._fetch = staticmethod(lambda log: {"rels": {"ge": REL[0]}, "app": APP})   # no real network in screenshots
 w = G.Main()
-w.latest = {"ge": "GE-Proton11-11-x86_64", "rtsp": "proton-rtsp-11.0-20260609-4"}
+w.latest = {"ge": "GE-Proton11-11-x86_64", "c_SpookySkeletons_proton_rtsp": "proton-rtsp-11.0-20260609-4"}
 w.latest_rel = {"ge": REL[0]}
 w.app_info = {"version": "9.9.0", "tag": "v9.9.0", "page": "https://github.com/lokinyauv-create/proton-updater/releases", "notes": ""}
 w.refresh(); w.show()

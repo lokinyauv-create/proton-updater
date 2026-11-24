@@ -40,7 +40,6 @@ Then open **Proton Updater** from your application menu. You can also download [
 | Key | What | Author / repository |
 |---|---|---|
 | `ge` | GE-Proton | [GloriousEggroll/proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom) |
-| `rtsp` | Proton-GE RTSP (video fixes for VRChat) | [SpookySkeletons/proton-ge-rtsp](https://github.com/SpookySkeletons/proton-ge-rtsp) |
 
 These are other people's projects; this tool only downloads their releases.
 

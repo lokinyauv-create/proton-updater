@@ -58,7 +58,7 @@ class Gui(unittest.TestCase):
         QDialog.exec = lambda self: 0
         P.releases = lambda s, n=30: [REL]
         P.steam_games = lambda: {"9": "Game"}
-        self.w.add_game(); self.w.pick_version("2"); self.w.about("2"); self.w.settings()
+        self.w.add_game(); self.w.pick_version("2"); wait(300); self.w.about("2"); wait(300); self.w.settings(); self.w.edit_game("2")
 
     def switches(self):
         return self.w.findChildren(G.Switch, "autoswitch")

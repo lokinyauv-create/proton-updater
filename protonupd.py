@@ -32,13 +32,6 @@ SOURCES = {
         "name": lambda tag: f"{tag}-x86_64",
         "match": r"^GE-Proton\d+-\d+-x86_64$",
     },
-    "rtsp": {
-        "title": "src_rtsp",
-        "repo": "SpookySkeletons/proton-ge-rtsp",
-        "asset": r"^(proton-rtsp-[\w.\-]+)\.tar\.gz$",
-        "name": lambda tag: tag,
-        "match": r"^proton-rtsp-",
-    },
 }
 DEFAULT = {"games": {"438100": {"name": "VRChat", "source": "ge", "pin": None}},
            "keep": 2, "last_check": 0, "pending": {}, "lang": "auto", "custom": {}, "bell": {}, "notified_app": "", "auto_global": True}
@@ -67,7 +60,25 @@ def load():
         del SOURCES[k]
     for k, cs in c["custom"].items():
         SOURCES[k] = custom_source(cs)
+    _drop_removed_sources(c)
     return c
+
+
+def _drop_removed_sources(c):
+    """The built-in Proton-GE RTSP source was removed (not suited for VRChat): move its games elsewhere."""
+    games = [g for g in c["games"].values() if g.get("source") == "rtsp"]
+    if not games:
+        return
+    new = next((k for k, cs in c["custom"].items() if cs["repo"].lower().endswith("/proton-rtsp")), "ge")
+    for g in games:
+        g["source"] = new; g["pin"] = None
+    save(c)
+
+
+def open_tools_dir():
+    """Open the folder where Steam keeps custom Proton builds in the file manager."""
+    COMPAT.mkdir(parents=True, exist_ok=True)
+    subprocess.Popen(["xdg-open", str(COMPAT)])
 
 
 def names():

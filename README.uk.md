@@ -40,7 +40,6 @@ curl -fsSL https://raw.githubusercontent.com/lokinyauv-create/proton-updater/mai
 | Ключ | Що | Автор / репозиторій |
 |---|---|---|
 | `ge` | GE-Proton | [GloriousEggroll/proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom) |
-| `rtsp` | Proton-GE RTSP (виправлення відео для VRChat) | [SpookySkeletons/proton-ge-rtsp](https://github.com/SpookySkeletons/proton-ge-rtsp) |
 
 Це проєкти інших авторів; ця програма лише завантажує їхні релізи.
 
